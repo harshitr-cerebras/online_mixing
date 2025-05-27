@@ -9,11 +9,8 @@ import regex as re
 import subprocess
 import time
 from tqdm import tqdm
-#TODO: Discuss if I need to build checkpointing capabilities in the orchestrator.
-#DIS: Checkpointing should be in sync with evaluation steps. Atleast at each eval steps the checkpoint should be saved.
-# Only thing that needs to be changed is the path of the yaml file which will be used to run the model. and where the orchestrator logs are saved.
 yaml_file_path = Path("configs/params_gpt2_tiny.yaml")
-save_path = Path.cwd() / "dynamic_sampling" / "update_obj.pkl" # Path to save the weight update object asa pickle so that it can be used for debugging.
+save_path = Path.cwd() / "dynamic_sampling" / "save_state.pkl" # Path to save the weight update object asa pickle so that it can be used for debugging.
 run_command = f"python run.py CPU --params {yaml_file_path} --mode train_and_eval"
 
 def save_pkl_obj(save_obj,file_path: Path) -> None:
@@ -166,22 +163,30 @@ class Orchestrator:
         A object to read the reward log file is created.
         A object to update the weights is created.
         The update_weight_obj is saved as a pickle file at the save path. The object stores the weights and rewards as dictionaries nested in seperate lists.
+        If the save path already exists, the object is loaded from the pickle file and the current object's attributes are updated with the loaded object's attributes.
         '''
-        self.yaml_file_path = yaml_file_path
-        if not self.yaml_file_path.is_file():
-            raise FileNotFoundError(f"Yaml file {self.yaml_file_path} does not exist.")
-        self.save_path = save_path
-        try:
-            self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating directory: {e}")
+        if save_path.is_file():
+            print(f"\033[1;34mSaved state detected at {save_path}. Loading the state.\n"
+                  "If you want to start from scratch, please delete the file and run the script again.\033[0m")
+            loaded_obj = self.load_state(file_path=save_path)
+            #Update the current object's attributes with the loaded object's attributes.
+            self.__dict__.update(loaded_obj.__dict__) 
+        else:
+            self.save_path = save_path
+            print(f"\033[1;34mNo saved state detected at {self.save_path}. Starting from scratch.\033[0m")
+            self.yaml_file_path = yaml_file_path
+            if not self.yaml_file_path.is_file():
+                raise FileNotFoundError(f"Yaml file {self.yaml_file_path} does not exist.")
+            try:
+                self.save_path.parent.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating directory: {e}")
 
-        self.yaml_reader_obj = YamlReader(file_path=self.yaml_file_path)
+            self.yaml_reader_obj = YamlReader(file_path=self.yaml_file_path)
 
-        self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights())
+            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights())
 
-        #TODO: Initialize it later after 1 eval is run
-        # self.reward_reader_obj = Read_Reward(reward_path=self.get_reward_log_path())
+
 
     def get_dataset_dirs(self):
         '''
@@ -200,7 +205,6 @@ class Orchestrator:
         return dataset_weights
 
     def get_reward_log_path(self):
-        #FIXME: This works assuming run.py is run from the same directory as the orchestrator. Does it need to be fixed and if yes how?
         '''
         Reads the yaml file and returns the reward log path from the model directory.
         '''
@@ -226,7 +230,17 @@ class Orchestrator:
         '''
         with file_path.open('wb') as f:
             pickle.dump(self,f)
+        print("\033[1;35mSuccessfully saved the object.\n \033[0m")
 
+    def load_state(self,file_path:Path):
+        '''
+        Load the state of the orchestrator from a pickle file.
+        '''
+        with file_path.open('rb') as f:
+            loaded_obj = pickle.load(f)
+        if not isinstance(loaded_obj, Orchestrator):
+            raise TypeError(f"Loaded object is not of type Orchestrator. Found {type(loaded_obj)}")
+        return loaded_obj
 
     def update_weights_and_save_obj(self):
         '''
@@ -256,15 +270,16 @@ class Orchestrator:
         total_steps = yaml_file['trainer']['init']['loop']['max_steps']
         return total_steps
     
-    def get_eval_steps(self):
-        #TODO: Discuss regarding making this compatible with eval frequency. What to do if exactly one is present and not the other.
+    def get_eval_frequency(self):
         '''
         Returns the eval steps from the yaml file.
         After this many steps the model is evaluated and the avg eval loss is logged.
         So this is the number of steps after which the weights are updated.
         '''
         yaml_file = self.yaml_reader_obj.read_yaml()
-        eval_steps = yaml_file['trainer']['init']['loop']['eval_steps']
+        if 'eval_frequency' not in yaml_file['trainer']['init']['loop']:
+            raise KeyError("eval_frequency not found in the yaml file. Please add it to the yaml file. eval_steps has no effect kindly only use only eval_frequency.")
+        eval_steps = yaml_file['trainer']['init']['loop']['eval_frequency']
         return eval_steps
 
     def get_checkpoint_steps(self)->int:
@@ -350,37 +365,35 @@ class Orchestrator:
         Main function to run the orchestrator. Main entry point for the orchestrator.
         num_eval_steps is the total number of eval steps that will be run assuming that a final eval step is run after the last training step.
         '''
-        #TODO: For simplicity assumed that total train steps are divisible by total eval steps. DIscuss what if that is not the case.
         total_train_steps = self.get_total_steps()
-        eval_steps = self.get_eval_steps()
+        eval_frequency = self.get_eval_frequency()
         checkpoint_steps = self.get_checkpoint_steps()
-
-        if eval_steps % checkpoint_steps != 0:
+        no_of_completed_evals = len(self.update_weight_obj.weight_log_list)-1
+        if eval_frequency % checkpoint_steps != 0:
             raise NotImplementedError(
-                f"Eval steps {eval_steps} is not divisible by checkpoint steps {checkpoint_steps}. "
-                "Restarting will cause a misalignment between evaluation and checkpointing steps."
+                f"Eval steps {eval_frequency} is not divisible by checkpoint steps {checkpoint_steps}. \n"
+                "Restarting will cause a misalignment between evaluation and checkpointing steps.\n"
+                "Please adjust the eval_steps and checkpoint_steps in the yaml file.\n"
             )
         
-        if total_train_steps % eval_steps != 0:
-            #FIXME: Discuss and confirm if the implementation should be changed to handle this case.
-            num_eval_steps = total_train_steps // eval_steps + 1
-            print(f"Total train steps: {total_train_steps}, Eval steps: {eval_steps}, Num eval steps: {num_eval_steps}\n")
-            raise NotImplementedError(f"Total train steps {total_train_steps} is not divisible by eval steps {eval_steps}.")
+        if total_train_steps % eval_frequency != 0:
+            total_evals = total_train_steps // eval_frequency + 1
+            print(f"Total train steps: {total_train_steps}, Eval frequency: {eval_frequency}, Num evals: {total_evals}\n")
         
         else:
-            num_eval_steps = total_train_steps // eval_steps
-            print(f"Total train steps: {total_train_steps}, Eval steps: {eval_steps}, Num eval steps: {num_eval_steps}\n")
+            total_evals = total_train_steps // eval_frequency
+            print(f"Total train steps: {total_train_steps}, Eval frequency: {eval_frequency}, Num evals: {total_evals}\n")
         
-        # Total stops is num_eval_steps - 1. The last step is not included in the eval steps as training is finished.
-        pbar=tqdm(total=num_eval_steps)
-        for counter in range(1,num_eval_steps):
-            print(f"Running script for eval step {counter} of {num_eval_steps}")
+        # Total stops is total_evals - 1. The last step is not included in the eval steps as training is finished.
+        pbar=tqdm(total=total_evals-no_of_completed_evals)
+        for counter in range(no_of_completed_evals+1,total_evals):
+            print(f"Running script for eval step {counter} of {total_evals}")
             process = self.run_script_parallel()
             self.kill_process(process=process,call_time=time.time())
             if counter==1:
                 self.reward_reader_obj = Read_Reward(reward_path=self.get_reward_log_path())
             self.update_weights_and_save_obj()
-            print(f"\033[1;32m***Step {counter} of {num_eval_steps} completed successfully ***\n\n\033[0m")
+            print(f"\033[1;32m***Step {counter} of {total_evals} completed successfully ***\n\n\033[0m")
             pbar.update(1)
         # Final Run for the last checkpoint this one will terminate automatically
         process = self.run_script_parallel()
