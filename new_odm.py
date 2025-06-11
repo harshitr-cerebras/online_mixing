@@ -190,6 +190,11 @@ class Orchestrator:
 
             self.checkpoint_yaml_list = []
 
+            self.model_save_path = Path(self.yaml_reader_obj.read_yaml()['trainer']['init']['model_dir'])
+
+            if not self.model_save_path.is_absolute():
+                raise ValueError(f"Provided model_dir path in config is not absolute: {self.model_save_path}")            
+
     def get_dataset_dirs(self):
         '''
         Reads the yaml file and returns the dataset directories from the mixture.
@@ -211,7 +216,7 @@ class Orchestrator:
         Reads the yaml file and returns the reward log path from the model directory.
         '''
         yaml_file = self.yaml_reader_obj.read_yaml()
-        reward_log_path = Path.cwd() / yaml_file['trainer']['init']['model_dir'] / "cerebras_logs" / "latest" / "run.log"
+        reward_log_path = self.model_save_path / "cerebras_logs" / "latest" / "run.log"
         return reward_log_path
 
     
@@ -367,7 +372,7 @@ class Orchestrator:
         Returns the path to the checkpoints file.
         '''
         yaml_file = self.yaml_reader_obj.read_yaml()
-        checkpoints_file_path = Path.cwd() / yaml_file['trainer']['init']['model_dir'] / "checkpoints_index.yaml"
+        checkpoints_file_path = self.model_save_path / "checkpoints_index.yaml"
         return checkpoints_file_path
 
     def sync_checkpoints_start(self):
