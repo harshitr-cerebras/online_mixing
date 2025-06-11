@@ -192,6 +192,7 @@ class Orchestrator:
 
             self.model_save_path = Path(self.yaml_reader_obj.read_yaml()['trainer']['init']['model_dir'])
 
+            print(f"!!!Please ensure that model is saved at {self.model_save_path}!!!")
             if not self.model_save_path.is_absolute():
                 raise ValueError(f"Provided model_dir path in config is not absolute: {self.model_save_path}")            
 
