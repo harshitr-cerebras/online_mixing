@@ -1,6 +1,33 @@
-# Use new odm.py
-!!Please ensure that run script does not override model save path the code expects it to be taken from config.
-!!Keep the saved states of the odm process for debugging.
-Model dir in conbfig must be an absolute path
-Update total_train_steps and yaml file path (Note that max steps in yaml will be overwritten!!!)
-The update object contains all the update information is saved at "./dynamic_sampling/save_state.pkl".
+# ODM Script Usage Instructions
+
+## Overview
+This guide provides steps to correctly use the updated `odm.py` script. Follow each instruction to ensure the configuration is correct and debugging information is retained.
+
+---
+
+## Steps
+
+1. **Use the Updated `new_odm.py`**
+   - Make sure you are using the latest version of `odm.py`.
+
+2. **Model Save Path Configuration**
+   - The model save path **must be read from the config file**.
+   -⚠️ **Do not use --model_dir** in the run script. 
+   - model_dir in config must be absolute. Otherwise you would get an appropriate error.
+
+4. **Update Training Parameters**
+   -⚠️ Update the `total_train_steps` variable in new_odm.py to reflect the correct number of training steps.
+   - Set the correct path for the YAML config file.
+   - **Note:** The `max_steps` defined in the YAML file will be **overwritten** by the script.
+
+5. **State Saving**
+   - The dynamic sampling update object will be saved at:
+     ```
+     ./dynamic_sampling/save_state.pkl
+     ```
+   - This can be used to access all the saved weights later.
+
+---
+
+## Notes
+- Make sure all paths used in the config are valid and absolute.
