@@ -4,6 +4,7 @@
 This guide provides steps to correctly use the updated `odm.py` script. Follow each instruction to ensure the configuration is correct and debugging information is retained.
 
 ---
+**Run new_odm.py in a tmux session.**
 
 ## Steps
 
@@ -26,6 +27,8 @@ This guide provides steps to correctly use the updated `odm.py` script. Follow e
      ./dynamic_sampling/save_state.pkl
      ```
    - This can be used to access all the saved weights later.
+6. **Restarting**
+   - In case of failure just rerun the new_odm.py file command.
 
 ---
 
