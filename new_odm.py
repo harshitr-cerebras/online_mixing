@@ -109,6 +109,8 @@ class SmoothedMeanWeightUpdater:
     
     def group_update(self, dataset_names: List[str], rewards: List, iteration: int) -> List[float]:
         # calculate epsilons
+        print("Printing current probaiblities")
+        print(self._probabilities)
         self.prev_eps = self.eps
         self.eps = min(1/self.num_datasets, math.sqrt(math.log(self.num_datasets)/(self.num_datasets*iteration)))
 
@@ -131,7 +133,8 @@ class SmoothedMeanWeightUpdater:
         total_weights = sum(self.weights)
         for name in self.dataset_names:
             self._probabilities[name] = self.weights[self.dataset_map[name]]/total_weights
-
+        print("printing modified probabilities")
+        print(self._probabilities)
         return list(self._probabilities.values())
 
 class Read_Reward(BaseModel):
