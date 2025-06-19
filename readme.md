@@ -4,7 +4,7 @@
 This guide provides steps to correctly use the updated `odm.py` script. Follow each instruction to ensure the configuration is correct and debugging information is retained.
 
 ---
-**Run new_odm.py in a tmux session.**
+**Run $python new_odm.py --save_dir save_state in a tmux session.**
 
 ## Steps
 

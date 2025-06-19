@@ -9,10 +9,18 @@ import regex as re
 import subprocess
 import time
 from tqdm import tqdm
-total_train_steps = 25 # Total steos to run the training for.
-yaml_file_path = Path("configs/params_gpt2_tiny.yaml")
-save_path = Path.cwd() / "dynamic_sampling" / "save_state.pkl" # Path to save the weight update object asa pickle so that it can be used for debugging.
-run_command = f"cszoo fit {yaml_file_path}"
+import argparse
+# Command line arguments
+parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling with exploitation or exploration.")
+parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
+args = parser.parse_args()
+# End command line arguments
+total_train_steps = 9578 # Total steps to run the training for.
+exploitation_flag = False #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration. 
+yaml_file_path = Path("/cb/home/harshitr/ws/online_mixing/sample_config.yaml")
+save_path = Path.cwd() / args.save_dir / "save_state.pkl"
+current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
+run_command = f"bash /cra-614/workdirs/11062025_data_mix_expt/scripts/gpt2_run_odm.sh"
 
 def save_pkl_obj(save_obj,file_path: Path) -> None:
     '''
@@ -90,8 +98,10 @@ class SmoothedMeanWeightUpdater:
 
         # calculate epsilons
         self.prev_eps = self.eps
-        self.eps = min(1/self.num_datasets, math.sqrt(math.log(self.num_datasets)/(self.num_datasets*iteration)))
-
+        if exploitation_flag:
+            self.eps = 1/((self.num_datasets**2) * math.sqrt(iteration))
+        else:
+            self.eps = min(1/self.num_datasets, math.sqrt(math.log10(self.num_datasets)/(self.num_datasets*iteration)))
         # calculate scaling factor
         total_estimated_rewards = sum([math.exp(r*self.prev_eps) for r in self._estimated_reward.values()])
         scaling_factor = (1-self.num_datasets*self.eps)/total_estimated_rewards
@@ -109,10 +119,13 @@ class SmoothedMeanWeightUpdater:
     
     def group_update(self, dataset_names: List[str], rewards: List, iteration: int) -> List[float]:
         # calculate epsilons
-        print("Printing current probaiblities")
+        print("Printing current weights")
         print(self._probabilities)
         self.prev_eps = self.eps
-        self.eps = min(1/self.num_datasets, math.sqrt(math.log(self.num_datasets)/(self.num_datasets*iteration)))
+        if exploitation_flag:
+            self.eps = 1/((self.num_datasets**2) * math.sqrt(iteration))
+        else:
+            self.eps = min(1/self.num_datasets, math.sqrt(math.log10(self.num_datasets)/(self.num_datasets*iteration)))
 
         # update cumulative estimated reward
         for name, reward in zip(dataset_names, rewards):
@@ -133,7 +146,7 @@ class SmoothedMeanWeightUpdater:
         total_weights = sum(self.weights)
         for name in self.dataset_names:
             self._probabilities[name] = self.weights[self.dataset_map[name]]/total_weights
-        print("printing modified probabilities")
+        print("Printing new weights")
         print(self._probabilities)
         return list(self._probabilities.values())
 
@@ -318,13 +331,18 @@ class Orchestrator:
         '''
         Run the run.py script in parallel using subprocess.
         '''
-        process = subprocess.Popen(
-            run_command,  
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        self.delete_load_ckpt()
+
+        with current_trainer_log_path.open(mode='w') as log_file:
+            print(f"Running the script: {run_command}")
+            log_file.write(f"Running the script: {run_command}\n")
+            process = subprocess.Popen(
+                run_command,  
+                shell=True,
+                stdout=log_file,
+                stderr=log_file,
+                text=True
+            )
         print(f"Started the training process with PID: \033[1;31m{process.pid}\033[0m")
         return process
 
@@ -378,6 +396,24 @@ class Orchestrator:
         yaml_file = self.yaml_reader_obj.read_yaml()
         checkpoints_file_path = self.model_save_path / "checkpoints_index.yaml"
         return checkpoints_file_path
+    
+    def delete_load_ckpt(self):
+        '''
+        Deletes the load checkpoint from the yaml file if extra checkpoints are present.
+        This is done to ensure that the latest checkpoint is loaded and not the one from the yaml file.
+        This is useful when the training is restarted and the checkpoints are already present.
+        '''
+        print("In delete_load_ckpt function")
+        if(len(self.checkpoint_yaml_list) != 0):
+            yaml_file = self.yaml_reader_obj.read_yaml()
+            if "ckpt_path" in yaml_file['trainer']['fit'].keys():
+                print("Deleting the load checkpoint from the yaml file to load the latest checkpoint.")
+                del yaml_file['trainer']['fit']['ckpt_path']
+                self.yaml_reader_obj.save_yaml(yaml_file, self.yaml_file_path)
+            else:
+                print("No load checkpoint found in the yaml file. Not deleting anything.")
+        else:
+            print("No checkpoints found. Not deleting the load checkpoint from the yaml file.")
 
     def sync_checkpoints_start(self):
         '''
@@ -386,9 +422,11 @@ class Orchestrator:
         '''
         if len(self.checkpoint_yaml_list) !=0:
             print(f"Synced checkpoints with the yaml file at path {self.get_checkpoints_file_path()}. Total checkpoints: {len(self.checkpoint_yaml_list)}")
+            self.yaml_reader_obj.update_yaml(new_weights=self.update_weight_obj._probabilities)
             YamlReader.save_yaml(self.checkpoint_yaml_list, self.get_checkpoints_file_path())
         else:
             print(f"No checkpoints found. Starting from scratch.")
+
 
     def update_yaml_file_max_steps(self,steps:int):
         '''
