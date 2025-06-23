@@ -190,6 +190,7 @@ class Orchestrator:
             #Update the current object's attributes with the loaded object's attributes.
             self.__dict__.update(loaded_obj.__dict__) 
         else:
+            self.run_command = run_command
             self.exploitation_flag = exploitation_flag
             self.current_trainer_log_path = current_trainer_log_path
             self.total_train_steps = total_train_steps
@@ -337,10 +338,10 @@ class Orchestrator:
         self.delete_load_ckpt()
 
         with self.current_trainer_log_path.open(mode='w') as log_file:
-            print(f"Running the script: {run_command}")
-            log_file.write(f"Running the script: {run_command}\n")
+            print(f"Running the script: {self.run_command}")
+            log_file.write(f"Running the script: {self.run_command}\n")
             process = subprocess.Popen(
-                run_command,  
+                self.run_command,  
                 shell=True,
                 stdout=log_file,
                 stderr=log_file,
