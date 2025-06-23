@@ -80,7 +80,7 @@ class SmoothedMeanWeightUpdater:
         self.dataset_map = {name: i for i, name in enumerate(dataset_names)}
         self.num_datasets = len(dataset_names)
         self.weights = weights if weights is not None else [1/len(dataset_names)]
-        total_weights = np.sum(weights)
+        total_weights = sum(weights)
         self._probabilities = {name:weight/total_weights for name,weight in zip(self.dataset_names,self.weights)}
         self._estimated_reward = {name:0.0 for name in self.dataset_names}
         self.prev_eps = None
@@ -189,6 +189,7 @@ class Orchestrator:
             loaded_obj = self.load_state(file_path=save_path)
             #Update the current object's attributes with the loaded object's attributes.
             self.__dict__.update(loaded_obj.__dict__) 
+            self.get_restart_info()
         else:
             self.run_command = run_command
             self.exploitation_flag = exploitation_flag
@@ -214,8 +215,20 @@ class Orchestrator:
 
             print(f"!!!Please ensure that model is saved at {self.model_save_path}!!!")
             if not self.model_save_path.is_absolute():
-                raise ValueError(f"Provided model_dir path in config is not absolute: {self.model_save_path}")            
-
+                raise ValueError(f"Provided model_dir path in config is not absolute: {self.model_save_path}")
+            self.save_state(file_path=self.save_path)
+            print("\033[1;35mSuccessfully initialized the orchestrator.\n \033[0m")            
+    def get_restart_info(self):
+        print(f"*** Begin print of state information ***")
+        print("Restarting from the saved state.")
+        print(f"Current trainer log path: {self.current_trainer_log_path}")
+        print(f"Run command: {self.run_command}")
+        print(f"Total train steps: {self.total_train_steps}")
+        print(f"Save path: {self.save_path}")
+        print(f"Yaml file path: {self.yaml_file_path}")
+        print(f"Model save path: {self.model_save_path}")
+        print(f"Exploitation flag: {self.exploitation_flag}")
+        print(f"*** End print of state information \n \n***")
     def get_dataset_dirs(self):
         '''
         Reads the yaml file and returns the dataset directories from the mixture.

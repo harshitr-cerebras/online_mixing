@@ -4,7 +4,22 @@
 This guide provides steps to correctly use the updated `odm.py` script. Follow each instruction to ensure the configuration is correct and debugging information is retained.
 
 ---
-**Run $python new_odm.py --save_dir save_state in a tmux session.**
+
+## Usage
+
+**Initial Run**
+
+Run in a `tmux` session. If the save directory already exists, and contains a saved state it will throw an error. Delete the directory and start again.
+```bash
+python new_odm.py --save_dir save_dir --exploitation_flag True
+```
+
+**Restarting**
+```bash
+python new_odm.py --save_dir save_dir --restart True
+```
+
+---
 
 ## Steps
 
@@ -13,22 +28,23 @@ This guide provides steps to correctly use the updated `odm.py` script. Follow e
 
 2. **Model Save Path Configuration**
    - The model save path **must be read from the config file**.
-   -⚠️ **Do not use --model_dir** in the run script. 
-   - model_dir in config must be absolute. Otherwise you would get an appropriate error.
+   - ⚠️ **Do not use --model_dir** in the run script. 
+   - `model_dir` in config must be absolute. Otherwise you would get an appropriate error.
 
-4. **Update Training Parameters**
-   -⚠️ Update the `total_train_steps` variable in new_odm.py to reflect the correct number of training steps.
+3. **Update Training Parameters**
+   - ⚠️ Update the `total_train_steps` variable in `new_odm.py` to reflect the correct number of training steps.
    - Set the correct path for the YAML config file.
    - **Note:** The `max_steps` defined in the YAML file will be **overwritten** by the script.
 
-5. **State Saving**
+4. **State Saving**
    - The dynamic sampling update object will be saved at:
      ```
      ./dynamic_sampling/save_state.pkl
      ```
    - This can be used to access all the saved weights later.
-6. **Restarting**
-   - In case of failure just rerun the new_odm.py file command.
+
+5. **Restarting**
+   - In case of failure, just rerun the command with the `--restart True` flag.
 
 ---
 
