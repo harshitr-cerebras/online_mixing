@@ -15,10 +15,12 @@ parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling 
 parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
 parser.add_argument("--resume",action='store_true',default=False,help="If set, the script will resume from the saved state.Other flag except save_dir are ignored. .If not set, the script will start from scratch.")
 parser.add_argument("--exploitation",action='store_true',default=False,help="If set, the exploitation strategy is used. If not set, exploration strategy is used.")
+parser.add_argument("--prevent_uniform",action='store_true',default=False,help="If set, the uniform sampling is prevented. If not set, the uniform sampling is allowed.") #Useful for the case of exploration.
 args = parser.parse_args()
 # End command line arguments
 total_train_steps = 9578 # Total steps to run the training for.
 resume = args.resume
+prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
 exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration. 
 yaml_file_path = Path("/cb/home/harshitr/ws/online_mixing/sample_config.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
@@ -81,7 +83,7 @@ class YamlReader(BaseModel):
 
 
 class SmoothedMeanWeightUpdater:
-    def __init__(self,dataset_names,weights,smoothing_factor=0.9,exploitation_flag=False):
+    def __init__(self,dataset_names,weights,smoothing_factor=0.9,exploitation_flag=False, prevent_uniform=False):
         '''
         dataset names is a list of datasets 
         weights is the starting set of weights.
@@ -91,6 +93,7 @@ class SmoothedMeanWeightUpdater:
         self.dataset_map = {name: i for i, name in enumerate(dataset_names)}
         self.num_datasets = len(dataset_names)
         self.weights = weights if weights is not None else [1/len(dataset_names)]
+        self.prevent_uniform = prevent_uniform
         total_weights = sum(weights)
         self._probabilities = {name:weight/total_weights for name,weight in zip(self.dataset_names,self.weights)}
         self._estimated_reward = {name:0.0 for name in self.dataset_names}
@@ -119,8 +122,13 @@ class SmoothedMeanWeightUpdater:
         scaling_factor = (1-self.num_datasets*self.eps)/total_estimated_rewards
 
         # update weights
-        for name in self.dataset_names:
-            self.weights[self.dataset_map[name]] = math.exp(self._estimated_reward[name]*self.prev_eps)*scaling_factor + self.eps
+        if self.eps!= 1/self.num_datasets or not self.prevent_uniform:
+            for name in self.dataset_names:
+                self.weights[self.dataset_map[name]] = math.exp(self._estimated_reward[name]*self.prev_eps)*scaling_factor + self.eps
+        else:
+            print("Since prevent_uniform is set the weights will not be made uniform. We will continue with the current weights.")
+            for name in self.dataset_names:
+                self.weights[self.dataset_map[name]] = self._probabilities[name]
 
         # update probabilities
         total_weights = sum(self.weights)
@@ -151,9 +159,14 @@ class SmoothedMeanWeightUpdater:
         scaling_factor = (1-self.num_datasets*self.eps)/total_estimated_rewards
 
         # update weights
-        for name in self.dataset_names:
-            # self.weights[self.dataset_map[name]] = math.exp(self._estimated_reward[name]*self.prev_eps)*scaling_factor + self.eps
-            self.weights[self.dataset_map[name]] = self._estimated_reward[name]*self.prev_eps*scaling_factor + self.eps
+        if self.eps!= 1/self.num_datasets or not self.prevent_uniform:
+            for name in self.dataset_names:
+                # self.weights[self.dataset_map[name]] = math.exp(self._estimated_reward[name]*self.prev_eps)*scaling_factor + self.eps
+                self.weights[self.dataset_map[name]] = self._estimated_reward[name]*self.prev_eps*scaling_factor + self.eps
+        else:
+            print("Since prevent_uniform is set the weights will not be made uniform. We will continue with the current weights.")
+            for name in self.dataset_names:
+                self.weights[self.dataset_map[name]] = self._probabilities[name]
         # update probabilities
         total_weights = sum(self.weights)
         for name in self.dataset_names:
@@ -185,7 +198,7 @@ class Read_Reward(BaseModel):
 
 
 class Orchestrator:
-    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path):
+    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path, prevent_uniform:bool=False):
         '''
         Initializes the orchestrator with the yaml file path and the save path.
         A object to handle yaml file reading and writing is created.
@@ -209,6 +222,7 @@ class Orchestrator:
             self.save_path = save_path
             print(f"\033[1;34mNo saved state detected at {self.save_path}. Starting from scratch.\033[0m")
             self.yaml_file_path = yaml_file_path
+            self.prevent_uniform = prevent_uniform
             if not self.yaml_file_path.is_file():
                 raise FileNotFoundError(f"Yaml file {self.yaml_file_path} does not exist.")
             try:
@@ -218,7 +232,7 @@ class Orchestrator:
 
             self.yaml_reader_obj = YamlReader(file_path=self.yaml_file_path)
 
-            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights(),exploitation_flag=self.exploitation_flag)
+            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights(),exploitation_flag=self.exploitation_flag,prevent_uniform=self.prevent_uniform)
 
             self.checkpoint_yaml_list = []
 
@@ -239,6 +253,7 @@ class Orchestrator:
         print(f"Yaml file path: {self.yaml_file_path}")
         print(f"Model save path: {self.model_save_path}")
         print(f"Exploitation flag: {self.exploitation_flag}")
+        print(f"Prevent uniform sampling: {self.prevent_uniform}")
         print(f"*** End print of state information \n \n***")
     def get_dataset_dirs(self):
         '''
@@ -543,7 +558,8 @@ if __name__ == "__main__":
         total_train_steps=total_train_steps,
         run_command=run_command,
         exploitation_flag=exploitation_flag,
-        current_trainer_log_path=current_trainer_log_path
+        current_trainer_log_path=current_trainer_log_path,
+        prevent_uniform=prevent_uniform
     )    
     
     orchestrator_obj.main()
