@@ -70,11 +70,12 @@ class YamlReader(BaseModel):
 
 
 class SmoothedMeanWeightUpdater:
-    def __init__(self,dataset_names,weights,smoothing_factor=0.9):
+    def __init__(self,dataset_names,weights,smoothing_factor=0.9,exploitation_flag=False):
         '''
         dataset names is a list of datasets 
         weights is the starting set of weights.
         '''
+        self.exploitation_flag = exploitation_flag
         self.dataset_names = dataset_names
         self.dataset_map = {name: i for i, name in enumerate(dataset_names)}
         self.num_datasets = len(dataset_names)
@@ -98,7 +99,7 @@ class SmoothedMeanWeightUpdater:
 
         # calculate epsilons
         self.prev_eps = self.eps
-        if exploitation_flag:
+        if self.exploitation_flag:
             self.eps = 1/((self.num_datasets**2) * math.sqrt(iteration))
         else:
             self.eps = min(1/self.num_datasets, math.sqrt(math.log10(self.num_datasets)/(self.num_datasets*iteration)))
@@ -122,7 +123,7 @@ class SmoothedMeanWeightUpdater:
         print("Printing current weights")
         print(self._probabilities)
         self.prev_eps = self.eps
-        if exploitation_flag:
+        if self.exploitation_flag:
             self.eps = 1/((self.num_datasets**2) * math.sqrt(iteration))
         else:
             self.eps = min(1/self.num_datasets, math.sqrt(math.log10(self.num_datasets)/(self.num_datasets*iteration)))
@@ -189,6 +190,8 @@ class Orchestrator:
             #Update the current object's attributes with the loaded object's attributes.
             self.__dict__.update(loaded_obj.__dict__) 
         else:
+            self.exploitation_flag = exploitation_flag
+            self.current_trainer_log_path = current_trainer_log_path
             self.total_train_steps = total_train_steps
             self.save_path = save_path
             print(f"\033[1;34mNo saved state detected at {self.save_path}. Starting from scratch.\033[0m")
@@ -202,7 +205,7 @@ class Orchestrator:
 
             self.yaml_reader_obj = YamlReader(file_path=self.yaml_file_path)
 
-            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights())
+            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights(),exploitation_flag=self.exploitation_flag)
 
             self.checkpoint_yaml_list = []
 
@@ -333,7 +336,7 @@ class Orchestrator:
         '''
         self.delete_load_ckpt()
 
-        with current_trainer_log_path.open(mode='w') as log_file:
+        with self.current_trainer_log_path.open(mode='w') as log_file:
             print(f"Running the script: {run_command}")
             log_file.write(f"Running the script: {run_command}\n")
             process = subprocess.Popen(
