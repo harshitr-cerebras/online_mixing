@@ -13,14 +13,25 @@ import argparse
 # Command line arguments
 parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling with exploitation or exploration.")
 parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
+parser.add_argument("--resume",action='store_true',default=False,help="If set, the script will resume from the saved state.Other flag except save_dir are ignored. .If not set, the script will start from scratch.")
+parser.add_argument("--exploitation",action='store_true',default=False,help="If set, the exploitation strategy is used. If not set, exploration strategy is used.")
 args = parser.parse_args()
 # End command line arguments
 total_train_steps = 9578 # Total steps to run the training for.
-exploitation_flag = False #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration. 
+resume = args.resume
+exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration. 
 yaml_file_path = Path("/cb/home/harshitr/ws/online_mixing/sample_config.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
 current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
 run_command = f"bash /cra-614/workdirs/11062025_data_mix_expt/scripts/gpt2_run_odm.sh"
+
+# Sanity checks
+if not yaml_file_path.is_file():
+    raise FileNotFoundError(f"Yaml file {yaml_file_path} does not exist. Please provide a valid yaml file path.")
+if not resume and save_path.is_file():
+    raise FileExistsError(f"Save path {save_path} already exists. Please provide a different save path or use the --resume flag to resume from the saved state.")
+if resume and not save_path.is_file():
+    raise FileNotFoundError(f"Save path {save_path} does not exist. Please provide a valid save path to resume from.")
 
 def save_pkl_obj(save_obj,file_path: Path) -> None:
     '''
