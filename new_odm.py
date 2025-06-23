@@ -174,7 +174,7 @@ class Read_Reward(BaseModel):
 
 
 class Orchestrator:
-    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int):
+    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path):
         '''
         Initializes the orchestrator with the yaml file path and the save path.
         A object to handle yaml file reading and writing is created.
@@ -526,7 +526,15 @@ class Orchestrator:
         pbar.close()            
 
 if __name__ == "__main__":
-    orchestrator_obj = Orchestrator(yaml_file_path=yaml_file_path,save_path=save_path,total_train_steps=total_train_steps)
+    orchestrator_obj = Orchestrator(
+        yaml_file_path=yaml_file_path,
+        save_path=save_path,
+        total_train_steps=total_train_steps,
+        run_command=run_command,
+        exploitation_flag=exploitation_flag,
+        current_trainer_log_path=current_trainer_log_path
+    )    
+    
     orchestrator_obj.main()
 
     # orchestrator.update_weights_and_save_obj()
