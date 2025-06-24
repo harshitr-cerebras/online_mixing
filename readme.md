@@ -11,7 +11,7 @@ This guide provides steps to correctly use the updated `odm.py` script. Follow e
 
 Run in a `tmux` session. If the save directory already exists, and contains a saved state it will throw an error. Delete the directory and start again.
 ```bash
-python new_odm.py --save_dir save_dir --exploitation ## Default exploitation is taken as False
+python new_odm.py --save_dir save_dir --exploitation --prevent_uniform ## Default exploitation is taken as False
 ```
 
 **Resuming**
