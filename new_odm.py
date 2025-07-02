@@ -22,7 +22,6 @@ parser.add_argument("--use_data_subset",action='store_true',default=False,help="
 args = parser.parse_args()
 # End command line arguments
 use_data_subset = args.use_data_subset #If true, the data subset feature is used. If false, the data subset is kept at [0,1].
-total_train_steps = 30 # Total steps to run the training for.
 resume = args.resume
 prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
 exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration.
@@ -656,6 +655,7 @@ class Orchestrator:
         pbar.close()            
 
 if __name__ == "__main__":
+    total_train_steps = YamlReader(file_path=yaml_file_path).read_yaml()['trainer']['init']['loop']['max_steps']
     orchestrator_obj = Orchestrator(
         yaml_file_path=yaml_file_path,
         save_path=save_path,
