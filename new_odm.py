@@ -10,23 +10,29 @@ import subprocess
 import time
 from tqdm import tqdm
 import argparse
+from scipy.optimize import minimize
 # Command line arguments
 parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling with exploitation or exploration.")
 parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
 parser.add_argument("--resume",action='store_true',default=False,help="If set, the script will resume from the saved state.Other flag except save_dir are ignored. .If not set, the script will start from scratch.")
 parser.add_argument("--exploitation",action='store_true',default=False,help="If set, the exploitation strategy is used. If not set, exploration strategy is used.")
 parser.add_argument("--prevent_uniform",action='store_true',default=False,help="If set, the uniform sampling is prevented. If not set, the uniform sampling is allowed.") #Useful for the case of exploration.
+parser.add_argument("--prevent_oversampling",action='store_true',default=False,help="If set, the oversampling is prevented. If not set, the oversampling is allowed.")
 args = parser.parse_args()
 # End command line arguments
-total_train_steps = 9578 # Total steps to run the training for.
+total_train_steps = 30 # Total steps to run the training for.
 resume = args.resume
 prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
-exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration. 
-yaml_file_path = Path("/cb/home/harshitr/ws/online_mixing/sample_config.yaml")
+exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration.
+prevent_oversampling = args.prevent_oversampling #If true, the oversampling is prevented. If false, the oversampling is allowed.
+oversampling_factor = 1.5 # Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical 
+yaml_file_path = Path("/cb/home/harshitr/ws/monolith/cerebras/models/src/cerebras/modelzoo/models/nlp/gpt2/configs/params_gpt2_tiny.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
 current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
-run_command = f"bash /cra-614/workdirs/11062025_data_mix_expt/scripts/gpt2_run_odm.sh"
-
+run_command = f"python run.py CPU --params configs/params_gpt2_tiny.yaml --mode train_and_eval"
+token_counts = [3345063936,2634899456,24480260096,6350389248,3362258944]
+w_emp = [token_cnt/sum(token_counts) for token_cnt in token_counts]
+tokens_per_step = 512*8192 # 512 is the batch size and 8192 is the sequence length taken from max_position_embeddings
 # Sanity checks
 if not yaml_file_path.is_file():
     raise FileNotFoundError(f"Yaml file {yaml_file_path} does not exist. Please provide a valid yaml file path.")
@@ -34,6 +40,54 @@ if not resume and save_path.is_file():
     raise FileExistsError(f"Save path {save_path} already exists. Please provide a different save path or use the --resume flag to resume from the saved state.")
 if resume and not save_path.is_file():
     raise FileNotFoundError(f"Save path {save_path} does not exist. Please provide a valid save path to resume from.")
+
+def fix_oversampling(w_emp:List[float],w_proposed:List[float],oversampling_factor:float=1.5) -> List[float]:
+    """
+    Adjusts the proposed weights to satisfy the oversampling constraint using optimization.
+    It minimizes the L2 distance to the proposed weights subject to:
+    1. w_i <= oversampling_factor * w_emp_i
+    2. sum(w) = 1
+    3. w_i >= 0
+    """
+    w_emp_np = np.array(w_emp)
+    w_proposed_np = np.array(w_proposed)
+
+    # Objective function: ||w - w_proposed||^2_2
+    def objective_func(w, w_prop):
+        return np.linalg.norm(w - w_prop, ord=2)**2
+
+    # Inequality constraint: w_i <= oversampling_factor * empirical_i
+    ineq_constraint = {
+        'type': 'ineq',
+        'fun': lambda w: oversampling_factor * w_emp_np - w
+    }
+    # Equality constraint: sum(w) = 1
+    eq_constraint = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+    constraints = [ineq_constraint, eq_constraint]
+
+    # Bounds for each element of w (w_i >= 0)
+    bounds = [(0, 1) for _ in range(len(w_proposed_np))]
+
+    # Initial guess for w
+    initial_w = np.copy(w_proposed_np)
+
+    # Solve the optimization problem
+    result = minimize(
+        fun=objective_func,
+        x0=initial_w,
+        args=(w_proposed_np,),
+        method='SLSQP',
+        bounds=bounds,
+        constraints=constraints
+    )
+
+    if result.success:
+        return result.x.tolist()
+    else:
+        print(f"Warning: Oversampling fix optimization failed: {result.message}")
+        return w_proposed
+
+
 
 def save_pkl_obj(save_obj,file_path: Path) -> None:
     '''
@@ -50,14 +104,14 @@ class YamlReader(BaseModel):
         if not file_path.is_file():
             raise ValueError(f"{file_path} does not have a file")
         if file_path.suffix.lower() not in ['.yaml','.yml']:
-            raise ValueError(f"Different extension than yaml")
+            raise ValueError("Different extension than yaml")
         return self
     def read_yaml(self) -> dict:
         with self.file_path.open('r',encoding='utf-8') as f:
             data = yaml.safe_load(f)
         return data
 
-    def update_yaml(self,new_weights):
+    def update_yaml(self,new_weights,data_subset_low:dict):
         '''
         New weights is a dict of the format 
         data_dir:weight
@@ -71,6 +125,7 @@ class YamlReader(BaseModel):
             if cur_path not in new_weights.keys():
                 raise KeyError(f"Missing key in new weights:{cur_path}")
             storage_path_dict['weight'] = new_weights[cur_path]
+            storage_path_dict['data_subset'] = f"{data_subset_low[cur_path]}-1.0"
         YamlReader.save_yaml(yaml_file,self.file_path)
         
     @classmethod
@@ -83,11 +138,13 @@ class YamlReader(BaseModel):
 
 
 class SmoothedMeanWeightUpdater:
-    def __init__(self,dataset_names,weights,smoothing_factor=0.9,exploitation_flag=False, prevent_uniform=False):
+    def __init__(self,dataset_names,weights,smoothing_factor=0.9,exploitation_flag=False, prevent_uniform=False,prevent_oversampling=False,oversampling_factor=1.5):
         '''
         dataset names is a list of datasets 
         weights is the starting set of weights.
         '''
+        self.prevent_oversampling = prevent_oversampling
+        self.oversampling_factor = oversampling_factor
         self.exploitation_flag = exploitation_flag
         self.dataset_names = dataset_names
         self.dataset_map = {name: i for i, name in enumerate(dataset_names)}
@@ -171,6 +228,17 @@ class SmoothedMeanWeightUpdater:
         total_weights = sum(self.weights)
         for name in self.dataset_names:
             self._probabilities[name] = self.weights[self.dataset_map[name]]/total_weights
+        if self.prevent_oversampling:
+            print("Prvent oversampling is set.")
+            check_oversampling = False
+            for w_dist,w_proposed in zip(w_emp,self._probabilities.values()):
+                if w_proposed > self.oversampling_factor * w_dist:
+                    check_oversampling = True
+            if check_oversampling:
+                print("Oversampling detected with",self._probabilities)
+                new_probs = fix_oversampling(w_emp=w_emp,w_proposed=list(self._probabilities.values()),oversampling_factor=self.oversampling_factor)
+                for name, new_prob in zip(self.dataset_names, new_probs):
+                    self._probabilities[name] = new_prob
         print("Printing new weights")
         print(self._probabilities)
         return list(self._probabilities.values())
@@ -232,12 +300,14 @@ class Orchestrator:
 
             self.yaml_reader_obj = YamlReader(file_path=self.yaml_file_path)
 
-            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights(),exploitation_flag=self.exploitation_flag,prevent_uniform=self.prevent_uniform)
+            self.update_weight_obj = SmoothedMeanWeightUpdater(dataset_names=self.get_dataset_dirs(),weights=self.get_initial_weights(),exploitation_flag=self.exploitation_flag,prevent_uniform=self.prevent_uniform,
+                                                               prevent_oversampling=prevent_oversampling,oversampling_factor=oversampling_factor)
 
             self.checkpoint_yaml_list = []
 
             self.model_save_path = Path(self.yaml_reader_obj.read_yaml()['trainer']['init']['model_dir'])
-
+            self.data_subset_low = [{name: 0.0 for name in self.update_weight_obj.dataset_names}]
+            self.yaml_reader_obj.update_yaml(new_weights=self.update_weight_obj._probabilities,data_subset_low=self.data_subset_low[0]) 
             print(f"!!!Please ensure that model is saved at {self.model_save_path}!!!")
             if not self.model_save_path.is_absolute():
                 raise ValueError(f"Provided model_dir path in config is not absolute: {self.model_save_path}")
@@ -254,6 +324,9 @@ class Orchestrator:
         print(f"Model save path: {self.model_save_path}")
         print(f"Exploitation flag: {self.exploitation_flag}")
         print(f"Prevent uniform sampling: {self.prevent_uniform}")
+        print(f"Prevent oversampling: {self.update_weight_obj.prevent_oversampling}")
+        if self.update_weight_obj.prevent_oversampling:
+            print(f"Oversampling factor: {self.update_weight_obj.oversampling_factor}")
         print(f"*** End print of state information \n \n***")
     def get_dataset_dirs(self):
         '''
@@ -310,6 +383,16 @@ class Orchestrator:
             raise TypeError(f"Loaded object is not of type Orchestrator. Found {type(loaded_obj)}")
         return loaded_obj
 
+    def update_data_subset_at_eval(self,new_prob:List[float]):
+        processed_token_with_new_prob = [tokens_per_step * self.get_eval_frequency() * prob for prob in new_prob]
+        processed_subset = [extra_tokens/ token_cnt for extra_tokens, token_cnt in zip(processed_token_with_new_prob, token_counts)]
+        new_data_subset_low = {name: low + processed for name, low, processed in zip(self.update_weight_obj.dataset_names, self.data_subset_low[-1].values(), processed_subset)}
+        for name in new_data_subset_low.keys():
+            if new_data_subset_low[name] > 1.0:
+                new_data_subset_low[name] = 0.0 #Doing a reset if we do not have enough tokens for till the next checkpoint.
+            else:
+                new_data_subset_low[name] = self.data_subset_low[-1][name]
+        self.data_subset_low.append(new_data_subset_low)
     def update_weights_and_save_obj(self):
         '''
         Updates the weights using the latest rewards and saves the update_weight_obj as a pickle file.
@@ -325,10 +408,11 @@ class Orchestrator:
         new_prob_dict = {name:prob for name,prob in zip(self.update_weight_obj.dataset_names,new_prob_list)}
         # Append the new probabilities to the weight log list
         (self.update_weight_obj).weight_log_list.append(new_prob_dict)
+        self.update_data_subset_at_eval(list(new_prob_dict.values()))
         # Save the object as a pickle file
         self.save_state(file_path=self.save_path)
         # Overwrite the yaml file with the new weights
-        self.yaml_reader_obj.update_yaml(new_weights=new_prob_dict)
+        self.yaml_reader_obj.update_yaml(new_weights=new_prob_dict,data_subset_low=self.data_subset_low[-1])
     
     def get_eval_frequency(self):
         '''
@@ -415,6 +499,7 @@ class Orchestrator:
         while(not self.evaluation_completion_criterion()):
             time.sleep(30)
         print("Evals completed.")
+        self.increment_data_subset_checkpoint()
         self.checkpoint_yaml_list = self.get_completed_checkpoints()
         self.update_weights_and_save_obj()
         print(f"Eval completed. Updated the weights and saved the object at {self.save_path}.")
@@ -465,7 +550,7 @@ class Orchestrator:
         '''
         if len(self.checkpoint_yaml_list) !=0:
             print(f"Synced checkpoints with the yaml file at path {self.get_checkpoints_file_path()}. Total checkpoints: {len(self.checkpoint_yaml_list)}")
-            self.yaml_reader_obj.update_yaml(new_weights=self.update_weight_obj._probabilities)
+            self.yaml_reader_obj.update_yaml(new_weights=self.update_weight_obj._probabilities,data_subset_low=self.data_subset_low[-1])
             YamlReader.save_yaml(self.checkpoint_yaml_list, self.get_checkpoints_file_path())
         else:
             print(f"No checkpoints found. Starting from scratch.")
@@ -491,6 +576,18 @@ class Orchestrator:
             with checkpoints_file_path.open('r') as f:
                 checkpoints_list = yaml.safe_load(f)
             return checkpoints_list
+    def increment_data_subset_checkpoint(self):
+        '''
+        Increments the data subset low at the finish of a checkpoint.
+        '''
+        processed_tokens = [tokens_per_step * self.get_checkpoint_steps() * prob for prob in self.update_weight_obj._probabilities.values()]
+        processed_subset = [extra_tokens/ token_cnt for extra_tokens, token_cnt in zip(processed_tokens, token_counts)]
+        new_data_subset_low = {name: low + processed for name, low, processed in zip(self.update_weight_obj.dataset_names, self.data_subset_low[-1].values(), processed_subset)}
+        for name in new_data_subset_low.keys():
+            if new_data_subset_low[name] > 1.0:
+                new_data_subset_low[name] = 0.0 #Doing a reset if we do not have enough tokens for till the next checkpoint.
+        self.data_subset_low.append(new_data_subset_low)
+
     def run_without_eval(self,num_extra_checkpoints):
         self.run_script_parallel()
         initial_num_checkpoints = len(self.checkpoint_yaml_list)
@@ -500,8 +597,9 @@ class Orchestrator:
             time.sleep(20)
             num_cur_checkpoints = len(self.get_completed_checkpoints())
             if(num_cur_checkpoints > len(self.checkpoint_yaml_list)):
-                print(f"New checkpoints found. Saving the state with the new checkpoints.")
+                print("New checkpoints found. Saving the state with the new checkpoints.")
                 self.checkpoint_yaml_list = self.get_completed_checkpoints()
+                self.increment_data_subset_checkpoint()
                 self.save_state(file_path=self.save_path)
         print(f"Completed {num_extra_checkpoints} extra checkpoints. Proceeding to eval or end.")
 
