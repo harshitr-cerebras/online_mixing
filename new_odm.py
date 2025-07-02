@@ -18,8 +18,10 @@ parser.add_argument("--resume",action='store_true',default=False,help="If set, t
 parser.add_argument("--exploitation",action='store_true',default=False,help="If set, the exploitation strategy is used. If not set, exploration strategy is used.")
 parser.add_argument("--prevent_uniform",action='store_true',default=False,help="If set, the uniform sampling is prevented. If not set, the uniform sampling is allowed.") #Useful for the case of exploration.
 parser.add_argument("--prevent_oversampling",action='store_true',default=False,help="If set, the oversampling is prevented. If not set, the oversampling is allowed.")
+parser.add_argument("--use_data_subset",action='store_true',default=False,help="If set, the data subset feature is used. If not the data  subset is kept at [0,1].")
 args = parser.parse_args()
 # End command line arguments
+use_data_subset = args.use_data_subset #If true, the data subset feature is used. If false, the data subset is kept at [0,1].
 total_train_steps = 30 # Total steps to run the training for.
 resume = args.resume
 prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
@@ -266,7 +268,7 @@ class Read_Reward(BaseModel):
 
 
 class Orchestrator:
-    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path, prevent_uniform:bool=False):
+    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path, prevent_uniform:bool=False,use_data_subset:bool=False):
         '''
         Initializes the orchestrator with the yaml file path and the save path.
         A object to handle yaml file reading and writing is created.
@@ -283,6 +285,7 @@ class Orchestrator:
             self.__dict__.update(loaded_obj.__dict__) 
             self.get_restart_info()
         else:
+            self.use_data_subset = use_data_subset
             self.run_command = run_command
             self.exploitation_flag = exploitation_flag
             self.current_trainer_log_path = current_trainer_log_path
@@ -408,7 +411,8 @@ class Orchestrator:
         new_prob_dict = {name:prob for name,prob in zip(self.update_weight_obj.dataset_names,new_prob_list)}
         # Append the new probabilities to the weight log list
         (self.update_weight_obj).weight_log_list.append(new_prob_dict)
-        self.update_data_subset_at_eval(list(new_prob_dict.values()))
+        if self.use_data_subset:
+            self.update_data_subset_at_eval(list(new_prob_dict.values()))
         # Save the object as a pickle file
         self.save_state(file_path=self.save_path)
         # Overwrite the yaml file with the new weights
@@ -499,7 +503,8 @@ class Orchestrator:
         while(not self.evaluation_completion_criterion()):
             time.sleep(30)
         print("Evals completed.")
-        self.increment_data_subset_checkpoint()
+        if(self.use_data_subset):
+            self.increment_data_subset_checkpoint()
         self.checkpoint_yaml_list = self.get_completed_checkpoints()
         self.update_weights_and_save_obj()
         print(f"Eval completed. Updated the weights and saved the object at {self.save_path}.")
@@ -599,7 +604,8 @@ class Orchestrator:
             if(num_cur_checkpoints > len(self.checkpoint_yaml_list)):
                 print("New checkpoints found. Saving the state with the new checkpoints.")
                 self.checkpoint_yaml_list = self.get_completed_checkpoints()
-                self.increment_data_subset_checkpoint()
+                if(self.use_data_subset):
+                    self.increment_data_subset_checkpoint()
                 self.save_state(file_path=self.save_path)
         print(f"Completed {num_extra_checkpoints} extra checkpoints. Proceeding to eval or end.")
 
@@ -657,7 +663,8 @@ if __name__ == "__main__":
         run_command=run_command,
         exploitation_flag=exploitation_flag,
         current_trainer_log_path=current_trainer_log_path,
-        prevent_uniform=prevent_uniform
+        prevent_uniform=prevent_uniform,
+        use_data_subset=use_data_subset
     )    
     
     orchestrator_obj.main()
