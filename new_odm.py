@@ -33,7 +33,6 @@ current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
 run_command = f"python run.py CPU --params configs/params_gpt2_tiny.yaml --mode train_and_eval"
 token_counts = [3345063936,2634899456,24480260096,6350389248,3362258944]
 w_emp = [token_cnt/sum(token_counts) for token_cnt in token_counts]
-tokens_per_step = 512*8192 # 512 is the batch size and 8192 is the sequence length taken from max_position_embeddings
 # Sanity checks
 if not yaml_file_path.is_file():
     raise FileNotFoundError(f"Yaml file {yaml_file_path} does not exist. Please provide a valid yaml file path.")
@@ -656,6 +655,12 @@ class Orchestrator:
 
 if __name__ == "__main__":
     total_train_steps = YamlReader(file_path=yaml_file_path).read_yaml()['trainer']['init']['loop']['max_steps']
+    if(not resume):
+        print(f"Total train steps: {total_train_steps}")
+    max_position_embedding = YamlReader(file_path=yaml_file_path).read_yaml()['trainer']['init']['model']['max_position_embeddings']
+    batch_size = YamlReader(file_path=yaml_file_path).read_yaml()['trainer']['fit']['train_dataloader']['batch_size']
+    tokens_per_step = batch_size * max_position_embedding #Batch size * max position embedding gives the number of tokens processed in one step.
+    print(f"Batch size: {batch_size}, Max position embedding: {max_position_embedding}, Tokens per step: {tokens_per_step}")
     orchestrator_obj = Orchestrator(
         yaml_file_path=yaml_file_path,
         save_path=save_path,
