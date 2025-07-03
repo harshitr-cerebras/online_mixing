@@ -125,7 +125,7 @@ class YamlReader(BaseModel):
             if cur_path not in new_weights.keys():
                 raise KeyError(f"Missing key in new weights:{cur_path}")
             storage_path_dict['weight'] = new_weights[cur_path]
-            storage_path_dict['data_subset'] = f"{data_subset_low[cur_path]}-1.0"
+            storage_path_dict['data_subset'] = f"{data_subset_low[cur_path]:.16f}-1.0"
         YamlReader.save_yaml(yaml_file,self.file_path)
         
     @classmethod
