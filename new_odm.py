@@ -19,6 +19,7 @@ parser.add_argument("--exploitation",action='store_true',default=False,help="If 
 parser.add_argument("--prevent_uniform",action='store_true',default=False,help="If set, the uniform sampling is prevented. If not set, the uniform sampling is allowed.") #Useful for the case of exploration.
 parser.add_argument("--prevent_oversampling",action='store_true',default=False,help="If set, the oversampling is prevented. If not set, the oversampling is allowed.")
 parser.add_argument("--use_data_subset",action='store_true',default=False,help="If set, the data subset feature is used. If not the data  subset is kept at [0,1].")
+parser.add_argument("--oversampling_factor",type=float,default=None,help="Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical")
 args = parser.parse_args()
 # End command line arguments
 use_data_subset = args.use_data_subset #If true, the data subset feature is used. If false, the data subset is kept at [0,1].
@@ -26,7 +27,9 @@ resume = args.resume
 prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
 exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration.
 prevent_oversampling = args.prevent_oversampling #If true, the oversampling is prevented. If false, the oversampling is allowed.
-oversampling_factor = 1.5 # Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical 
+oversampling_factor = args.oversampling_factor # Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical 
+if prevent_oversampling and oversampling_factor is None:
+    raise ValueError("Oversampling factor must be provided if prevent_oversampling is set to True.")
 yaml_file_path = Path("/cb/home/harshitr/ws/monolith/cerebras/models/src/cerebras/modelzoo/models/nlp/gpt2/configs/params_gpt2_tiny.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
 current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
@@ -661,6 +664,8 @@ if __name__ == "__main__":
     batch_size = YamlReader(file_path=yaml_file_path).read_yaml()['trainer']['fit']['train_dataloader']['batch_size']
     tokens_per_step = batch_size * max_position_embedding #Batch size * max position embedding gives the number of tokens processed in one step.
     print(f"Batch size: {batch_size}, Max position embedding: {max_position_embedding}, Tokens per step: {tokens_per_step}")
+    if prevent_oversampling:
+        print(f"Oversampling factor: {oversampling_factor}")
     orchestrator_obj = Orchestrator(
         yaml_file_path=yaml_file_path,
         save_path=save_path,
