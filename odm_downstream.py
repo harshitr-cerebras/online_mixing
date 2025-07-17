@@ -529,7 +529,7 @@ class Orchestrator:
         self._downstream_log_list.append(downstream_rewards_dict)
         downstream_contribution_to_upstream_reward = self.calculate_downstream_contribution(downstream_rewards_dict=downstream_rewards_dict)
         # Append the latest rewards to the reward log list
-        (self.update_weight_obj).reward_log_list.append(latest_rewards_dict,downstream_contribution_to_upstream_reward)
+        (self.update_weight_obj).reward_log_list.append(latest_rewards_dict)
         combined_rewards = self.combine_rewards(latest_rewards_list,downstream_contribution_to_upstream_reward)
         # Update the weights using the latest rewards and increse the iteration count
         new_prob_list = self.update_weight_obj.group_update(dataset_names=self.update_weight_obj.dataset_names,rewards=combined_rewards,iteration=self.update_weight_obj.iter_count)
