@@ -12,11 +12,14 @@ This guide provides steps to correctly use the updated `odm.py` script. Follow e
 Run in a `tmux` session. If the save directory already exists, and contains a saved state it will throw an error. Delete the directory and start again.
 ```bash
 python new_odm.py --save_dir save_dir --exploitation --prevent_uniform --use_data_subset --prevent_oversampling --oversampling_factor 1.5 ## Default exploitation is taken as False, data-subset is not used and oversampling is alllowed
+```bash
+python odm_downstream.py --save_dir save_dir --exploitation --prevent_uniform --use_data_subset --prevent_oversampling --oversampling_factor 1.5 --downstream_importance 0.5
 ```
 
 **Resuming**
 ```bash
 python new_odm.py --save_dir save_dir --resume
+python odm_downstream.py --save_dir save_dir --resume
 ```
 
 ---
