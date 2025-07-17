@@ -482,7 +482,7 @@ class Orchestrator:
                 raise NotADirectoryError(f"Output directory for task {task_name} does not exist: {output_dir}")
             task_parser = DownstreamParser(eval_dir=output_dir,task_name=task_name)
             downstream_log_likelihood[task_name] = task_parser.process_all_files() # For each task we have a mapping of task: {subject:[eval loss on answer]}
-        downstream_rewards = {task_name: {subject:{-sum(log)/len(log)} for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()} # - sum is used to convert log likelihood to negative log likelihood
+        downstream_rewards = {task_name: {subject:-sum(log)/len(log) for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()} # - sum is used to convert log likelihood to negative log likelihood
 
         return downstream_rewards
 
