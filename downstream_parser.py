@@ -10,7 +10,7 @@ class DownstreamParser:
     from evaluations like MMLU, ARC-Challenge, etc.
     """
     
-    def __init__(self, eval_dir: Union[str, Path]):
+    def __init__(self, eval_dir: Union[str, Path],task_name: str):
         """
         Initialize the parser with the evaluation directory path.
         
@@ -22,7 +22,48 @@ class DownstreamParser:
             raise FileNotFoundError(f"The specified path does not exist: {self.eval_dir}")
         if not self.eval_dir.is_dir():
             raise NotADirectoryError(f"The specified path is not a directory: {self.eval_dir}")
-    
+        self.task_name = task_name
+        if self.task_name not in ["mmlu", "arc_challenge","arc_easy"]:
+            raise ValueError(f"Unsupported task name: {self.task_name}. Supported tasks are: mmlu, arc_challenge, arc_easy.")
+        if self.task_name == "arc_easy":
+            self.create_jsonl_file()
+
+    def create_jsonl_file(self):
+        """
+        Create a JSONL file for the specified task from a json file. Currently used only for arc_easy.
+        This method converts JSON array format to JSONL format where each line is a separate JSON object.
+        """
+        print(f"Creating JSONL file for task: {self.task_name}")
+        json_files_list = sorted(glob.glob(str(self.eval_dir / "*.json")))
+        json_files_list = [file for file in json_files_list if self.task_name in file]
+        
+        if not json_files_list:
+            raise FileNotFoundError(f"No JSON files found for task {self.task_name} in {self.eval_dir}")
+        if len(json_files_list) > 1:
+            raise ValueError(f"Multiple JSON files found for task {self.task_name}: {json_files_list}. Please ensure only one JSON file is present with the task name in it.")
+        json_file = json_files_list[0]
+        print(f"Using JSON file: {json_file} to create JSONL file.")
+        jsonl_file = self.eval_dir / f"{self.task_name}.jsonl"
+        
+        try:
+            # Read the JSON file
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Write to JSONL file (each JSON object on a separate line)
+            with open(jsonl_file, 'w', encoding='utf-8') as f:
+                for item in data:
+                    json.dump(item, f, ensure_ascii=False)
+                    f.write('\n')
+            
+            print(f"Successfully created JSONL file: {jsonl_file}")
+            print(f"Converted {len(data)} items from JSON to JSONL format")
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format in file {json_file}: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error creating JSONL file: {e}")
+
     def get_jsonl_files_list(self) -> List[str]:
         """Return a list of all JSONL files in the evaluation directory in sorted order."""
         return sorted(glob.glob(str(self.eval_dir / "*.jsonl")))
@@ -142,7 +183,7 @@ class DownstreamParser:
 if __name__ == "__main__":
     ## Testing code for mmlu
     mmlu_path = Path("/cb/cold/riturajj/gpu_setup/results/new_ift/chat/8B_7a_wd0.2_8b_bs512_3epoch/mmlu/__mnt__local__shared__riturajj__ckpts__merge__8B_7a_wd0.2_8b_bs512_3epoch")
-    mmlu_parser = DownstreamParser(mmlu_path)
+    mmlu_parser = DownstreamParser(mmlu_path, "mmlu")
     # mmlu_files_list = mmlu_parser.get_jsonl_files_list()
     # first_file = mmlu_files_list[0]
     # parsed_data = mmlu_parser.parse_jsonl(first_file)
@@ -150,19 +191,25 @@ if __name__ == "__main__":
     # print(mmlu_parser.get_subject_and_log_likelihood(parsed_data[0]))
     # print(f"Total files processed: {mmlu_parser.get_file_count()}")
     mmlu_res_dict = mmlu_parser.process_all_files()
-    mmlu_sub_avg = {sub: sum(logs)/len(logs) for sub, logs in mmlu_res_dict.items()}
-    print(mmlu_sub_avg)
+    mmlu_sub_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in mmlu_res_dict.items()}
+    print(mmlu_sub_avg_nll)
 
     # ## Testing code for arc-challenge
-    arc_path = Path("/net/nfs1/srv/nfs/scrap-pool/riturajj/gpu_setup/results/new_ift/chat/8B_7a_wd0.2_8b_bs512_3epoch/arc_challenge/__mnt__local__shared__riturajj__ckpts__merge__8B_7a_wd0.2_8b_bs512_3epoch")
-    arc_parser = DownstreamParser(arc_path)
-    # arc_files_list = arc_parser.get_jsonl_files_list()
+    arc_challenge_path = Path("/net/nfs1/srv/nfs/scrap-pool/riturajj/gpu_setup/results/new_ift/chat/8B_7a_wd0.2_8b_bs512_3epoch/arc_challenge/__mnt__local__shared__riturajj__ckpts__merge__8B_7a_wd0.2_8b_bs512_3epoch")
+    arc_challenge_parser = DownstreamParser(arc_challenge_path, "arc_challenge")
+    # arc_files_list = arc_challenge_parser.get_jsonl_files_list()
     # print(arc_files_list)
     # first_arc_file = arc_files_list[0]
-    # parsed_arc_data = arc_parser.parse_jsonl(first_arc_file)
+    # parsed_arc_data = arc_challenge_parser.parse_jsonl(first_arc_file)
     # print(parsed_arc_data[0])
-    # print(arc_parser.get_subject_and_log_likelihood(parsed_arc_data[0]))
-    arc_res_dict = arc_parser.process_all_files()
-    # print(arc_res_dict.keys())
-    arc_sub_avg = {sub: sum(logs)/len(logs) for sub, logs in arc_res_dict.items()}
-    print(arc_sub_avg)
+    # print(arc_challenge_parser.get_subject_and_log_likelihood(parsed_arc_data[0]))
+    arc_challenge_res = arc_challenge_parser.process_all_files()
+    # print(arc_challenge_res.keys())
+    arc_challenge_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in arc_challenge_res.items()}
+    print(arc_challenge_avg_nll)
+
+    ## Testing code for arc_easy
+    arc_easy_path = Path("/cb/home/harshitr/ws/monolith/cerebras/models/src/cerebras/modelzoo/models/nlp/gpt2/arc_easy_test/")
+    arc_easy_parser = DownstreamParser(arc_easy_path, "arc_easy")
+    arc_easy_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in arc_easy_parser.process_all_files().items()}
+    print(arc_easy_avg_nll)
