@@ -647,6 +647,7 @@ class Orchestrator:
         print("Checkpoint at eval has been saved. Proceeding to wait for evals to be done.")
         while(not self.evaluation_completion_criterion()):
             time.sleep(30)
+        print("Upstream eval completed. Now waiting for downstream evals to be done.")
         while(not self.downstream_eval_completion_criterion()):
             time.sleep(30)
         print("Both upstream and downstream evals completed.")
