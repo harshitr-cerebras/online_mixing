@@ -35,7 +35,7 @@ class DownstreamParser:
         """
         print(f"Creating JSONL file for task: {self.task_name}")
         json_files_list = sorted(glob.glob(str(self.eval_dir / "*.json")))
-        json_files_list = [file for file in json_files_list if self.task_name in file]
+        json_files_list = [file for file in json_files_list if self.task_name in Path(file).name]
         
         if not json_files_list:
             raise FileNotFoundError(f"No JSON files found for task {self.task_name} in {self.eval_dir}")
