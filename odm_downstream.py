@@ -43,10 +43,10 @@ downstream_importance = args.downstream_importance #Importance of downstream tas
 oversampling_factor = args.oversampling_factor # Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical 
 if prevent_oversampling and oversampling_factor is None:
     raise ValueError("Oversampling factor must be provided if prevent_oversampling is set to True.")
-yaml_file_path = Path("/cb/home/harshitr/ws/monolith/cerebras/models/src/cerebras/modelzoo/models/nlp/gpt2/configs/params_gpt2_tiny.yaml")
+yaml_file_path = Path("/cra-614/workdirs/16072025_data_mix_downstream_testing/configs/downst_config.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
 current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
-run_command = f"python run.py CPU --params configs/params_gpt2_tiny.yaml --mode train_and_eval"
+run_command = f"bash scripts/gpt2_test.sh"
 token_counts = [3345063936,2634899456,24480260096,6350389248,3362258944]
 w_emp = [token_cnt/sum(token_counts) for token_cnt in token_counts]
 # Sanity checks
@@ -480,7 +480,7 @@ class Orchestrator:
         for task_name, output_dir in zip(task_names, downstream_task_output_dirs):
             if not output_dir.is_dir():
                 raise NotADirectoryError(f"Output directory for task {task_name} does not exist: {output_dir}")
-            task_parser = DownstreamParser(task_name=task_name,output_dir=output_dir)
+            task_parser = DownstreamParser(eval_dir=output_dir,task_name=task_name)
             downstream_log_likelihood[task_name] = task_parser.process_all_files() # For each task we have a mapping of task: {subject:[eval loss on answer]}
         downstream_rewards = {task_name: {subject:{-sum(log)/len(log)} for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()} # - sum is used to convert log likelihood to negative log likelihood
 
