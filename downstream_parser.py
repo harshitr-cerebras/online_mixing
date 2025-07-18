@@ -25,8 +25,7 @@ class DownstreamParser:
         self.task_name = task_name
         if self.task_name not in ["mmlu", "arc_challenge","arc_easy"]:
             raise ValueError(f"Unsupported task name: {self.task_name}. Supported tasks are: mmlu, arc_challenge, arc_easy.")
-        if self.task_name == "arc_easy":
-            self.create_jsonl_file()
+        self.create_jsonl_file()
 
     def create_jsonl_file(self):
         """
@@ -38,26 +37,29 @@ class DownstreamParser:
         json_files_list = [file for file in json_files_list if self.task_name in Path(file).name]
         
         if not json_files_list:
-            raise FileNotFoundError(f"No JSON files found for task {self.task_name} in {self.eval_dir}")
-        if len(json_files_list) > 1:
-            raise ValueError(f"Multiple JSON files found for task {self.task_name}: {json_files_list}. Please ensure only one JSON file is present with the task name in it.")
-        json_file = json_files_list[0]
-        print(f"Using JSON file: {json_file} to create JSONL file.")
+            print(f"No JSON files found for task {self.task_name} in {self.eval_dir}")
+            return
+
+        print(f"{self.task_name} JSON files found: {json_files_list}")
         jsonl_file = self.eval_dir / f"{self.task_name}.jsonl"
+        total_items = 0
         
         try:
-            # Read the JSON file
-            with open(json_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
             # Write to JSONL file (each JSON object on a separate line)
-            with open(jsonl_file, 'w', encoding='utf-8') as f:
-                for item in data:
-                    json.dump(item, f, ensure_ascii=False)
-                    f.write('\n')
+            with open(jsonl_file, 'w', encoding='utf-8') as f_out:
+                for json_file in json_files_list:
+                    # print(f"Processing file: {json_file}")
+                    # Read the JSON file
+                    with open(json_file, 'r', encoding='utf-8') as f_in:
+                        data = json.load(f_in)
+                    
+                    for item in data:
+                        json.dump(item, f_out, ensure_ascii=False)
+                        f_out.write('\n')
+                    total_items += len(data)
             
             print(f"Successfully created JSONL file: {jsonl_file}")
-            print(f"Converted {len(data)} items from JSON to JSONL format")
+            print(f"Converted {total_items} items from JSON to JSONL format")
             
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON format in file {json_file}: {e}")
