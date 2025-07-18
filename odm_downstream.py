@@ -500,8 +500,9 @@ class Orchestrator:
             temp_task_map = downstream_mapping[task_name]
             for subject, reward in subject_rewards.items():
                 if subject not in temp_task_map:
-                    print(f"Subject {subject} not found in task mapping for {task_name}. Skipping.")
+                    print(f"Skipping subject {subject} not in {task_name}")
                 else:
+                    print(f"Using subject {subject} found in task mapping for {task_name}.")
                     for i, weight in enumerate(temp_task_map[subject]):
                         downstream_contribution[i] += reward * weight
         return downstream_contribution
