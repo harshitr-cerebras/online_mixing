@@ -25,13 +25,13 @@ parser.add_argument("--downstream_importance",type=float,default=0.5,help="Impor
 args = parser.parse_args()
 # End command line arguments
 downstream_mapping = {"mmlu":{
-                              'abstract_algebra': [0.1,0.2,0.3,0.4,0.5],
+                              'abstract_algebra': [0.0,0.0,0.0,0.0,1.0],
                             },
                      "arc_challenge":{
-                                'NA': [0.0,0.1,0.2,0.3,0.4],
+                                'NA': [0.0,0.0,0.0,0.0,1.0],
                              },
                     "arc_easy":{
-                                'NA': [0.0,0.0,0.0,0.0,0.4],
+                                'NA': [0.0,0.0,0.0,0.0,1.0],
                              }
 } # A mapping of downstream tasks to training datasets. Eseetntially telling the contribution of datasets to downstream performance.
 use_data_subset = args.use_data_subset #If true, the data subset feature is used. If false, the data subset is kept at [0,1].
@@ -517,6 +517,9 @@ class Orchestrator:
         if len(downstream_contribution_to_upstream_reward) != self.update_weight_obj.num_datasets:
             raise ValueError(f"Downstream contribution length {len(downstream_contribution_to_upstream_reward)} does not match number of datasets {self.update_weight_obj.num_datasets}.")
         combined_rewards = [up_reward*(1-self.downstream_importance) + downstream_contribution*self.downstream_importance for up_reward, downstream_contribution in zip(latest_rewards, downstream_contribution_to_upstream_reward)]
+        print(f"Upstream rewards: {latest_rewards}")
+        print(f"Downstream contribution: {downstream_contribution_to_upstream_reward}")
+        print(f"Combined rewards: {combined_rewards}")
         return combined_rewards
         
 
@@ -836,9 +839,7 @@ if __name__ == "__main__":
         use_data_subset=use_data_subset,
         downstream_importance=downstream_importance
     )    
-    
     orchestrator_obj.main()
-
     # orchestrator.update_weights_and_save_obj()
     # orchestrator.update_weights_and_save_obj()
     # orchestrator.update_weights_and_save_obj()
