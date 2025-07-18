@@ -25,7 +25,7 @@ parser.add_argument("--downstream_importance",type=float,default=0.5,help="Impor
 args = parser.parse_args()
 # End command line arguments
 downstream_mapping = {"mmlu":{
-                              'mmlu_abstract_algebra': [0.1,0.2,0.3,0.4,0.5],
+                              'abstract_algebra': [0.1,0.2,0.3,0.4,0.5],
                             },
                      "arc_challenge":{
                                 'NA': [0.0,0.1,0.2,0.3,0.4],
