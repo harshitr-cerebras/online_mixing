@@ -12,6 +12,8 @@ from tqdm import tqdm
 import argparse
 from scipy.optimize import minimize
 from downstream_parser import DownstreamParser
+yaml_file_path = Path("/cra-614/workdirs/16072025_data_mix_downstream_testing/configs/downst_config.yaml")
+run_command = f"bash scripts/gpt2_test.sh"
 # Command line arguments
 parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling with exploitation or exploration.")
 parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
@@ -43,10 +45,8 @@ downstream_importance = args.downstream_importance #Importance of downstream tas
 oversampling_factor = args.oversampling_factor # Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical 
 if prevent_oversampling and oversampling_factor is None:
     raise ValueError("Oversampling factor must be provided if prevent_oversampling is set to True.")
-yaml_file_path = Path("/cra-614/workdirs/16072025_data_mix_downstream_testing/configs/downst_config.yaml")
 save_path = Path.cwd() / args.save_dir / "save_state.pkl"
 current_trainer_log_path = Path.cwd() / args.save_dir / "current_trainer.log"
-run_command = f"bash scripts/gpt2_test.sh"
 token_counts = [3345063936,2634899456,24480260096,6350389248,3362258944]
 w_emp = [token_cnt/sum(token_counts) for token_cnt in token_counts]
 # Sanity checks
