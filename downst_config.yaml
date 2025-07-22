@@ -62,7 +62,7 @@ trainer:
         shuffle: false
         max_sequence_length: 8192
         num_workers: 1
-        data_dir: /cra-614/workdirs/250609_data_mixing_efficiency_experiments/configs/climb_baseline_mix/evals/downstream/data_dir/
+        data_dir: /cra-614/workdirs/11062025_data_mix_expt/artifacts/downstream_0.1_smoothing_0.5_downstream_importance/downstream_data_dir
         eos_id: 128001
         start_token: 128000
         stop_sequences: []
@@ -82,7 +82,7 @@ trainer:
         shuffle: false
         max_sequence_length: 8192
         num_workers: 1
-        data_dir: /cra-614/workdirs/250609_data_mixing_efficiency_experiments/configs/climb_baseline_mix/evals/downstream/data_dir/
+        data_dir: /cra-614/workdirs/11062025_data_mix_expt/artifacts/downstream_0.1_smoothing_0.5_downstream_importance/downstream_data_dir
         eos_id: 128001
         start_token: 128000
         stop_sequences: []
@@ -102,7 +102,7 @@ trainer:
         shuffle: false
         max_sequence_length: 8192
         num_workers: 1
-        data_dir: /cra-614/workdirs/250609_data_mixing_efficiency_experiments/configs/climb_baseline_mix/evals/downstream/data_dir/
+        data_dir: /cra-614/workdirs/11062025_data_mix_expt/artifacts/downstream_0.1_smoothing_0.5_downstream_importance/downstream_data_dir
         eos_id: 128001
         start_token: 128000
         stop_sequences: []
