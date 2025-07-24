@@ -19,7 +19,7 @@ python new_odm.py --save_dir save_dir --exploitation --prevent_uniform --use_dat
 **Note:** Default exploitation is taken as False, data-subset is not used and oversampling is allowed.
 
 ```bash
-python odm_downstream.py --save_dir save_dir --exploitation --prevent_uniform --use_data_subset --prevent_oversampling --oversampling_factor 1.5 --downstream_importance 0.5
+python odm_downstream.py --save_dir save_dir --exploitation --prevent_uniform --use_data_subset --prevent_oversampling --oversampling_factor 1.5 --downstream_importance 0.5 --use_accuracy
 ```
 
 ### Resuming

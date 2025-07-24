@@ -10,7 +10,7 @@ class DownstreamParser:
     from evaluations like MMLU, ARC-Challenge, etc.
     """
     
-    def __init__(self, eval_dir: Union[str, Path],task_name: str):
+    def __init__(self, eval_dir: Union[str, Path],task_name: str, use_accuracy_flag: bool = False):
         """
         Initialize the parser with the evaluation directory path.
         
@@ -23,6 +23,7 @@ class DownstreamParser:
         if not self.eval_dir.is_dir():
             raise NotADirectoryError(f"The specified path is not a directory: {self.eval_dir}")
         self.task_name = task_name
+        self.use_accuracy_flag = use_accuracy_flag
         if self.task_name not in ["mmlu", "arc_challenge","arc_easy"]:
             raise ValueError(f"Unsupported task name: {self.task_name}. Supported tasks are: mmlu, arc_challenge, arc_easy.")
         self.create_jsonl_file()
@@ -133,6 +134,28 @@ class DownstreamParser:
         
         return subject, log_likelihood
     
+    def get_subject_and_accuracy(self, entry: Dict) -> Tuple[str, float]:
+        """
+        Extracts the subject and log likelihood of the correct answer 
+        from a json entry in a MMLU or ARC-Challenge JSONL file.
+        Returns "NA" as default subject for datasets without subject field.
+        
+        Args:
+            entry: Dictionary representing a single entry from JSONL file
+            
+        Returns:
+            Tuple of (subject, log_likelihood)
+        """
+        # Get subject with default fallback
+        subject = entry.get("doc", {}).get("subject", "NA")
+        
+        # Get correct answer index - handle both "answer" and "answerKey" fields
+        doc = entry.get("doc", {})
+        accuracy = entry['acc']
+        
+        return subject, accuracy
+
+
     def process_one_file(self, file_path: Union[str, Path]) -> List[Tuple[str, float]]:
         """
         Process a single JSONL file and extract subjects and log likelihoods.
@@ -148,8 +171,12 @@ class DownstreamParser:
         
         for entry in data:
             try:
-                subject, log_likelihood = self.get_subject_and_log_likelihood(entry)
-                results.append((subject, log_likelihood))
+                if self.use_accuracy_flag:
+                    subject, accuracy = self.get_subject_and_accuracy(entry)
+                    results.append((subject, accuracy))
+                else:
+                    subject, log_likelihood = self.get_subject_and_log_likelihood(entry)
+                    results.append((subject, log_likelihood))
             except KeyError as e:
                 print(f"Key error in entry {entry}: {e}")
             except Exception as e:

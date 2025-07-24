@@ -14,6 +14,40 @@ from scipy.optimize import minimize
 from downstream_parser import DownstreamParser
 yaml_file_path = Path("/cra-614/workdirs/16072025_data_mix_downstream_testing/configs/downst_config.yaml")
 run_command = f"bash scripts/gpt2_test.sh"
+downstream_mapping = {
+    'arc_challenge': {
+        'NA': [0.3333333333333333, 0.3333333333333333, 0.3333333333333333, 0.0, 0.0]
+    }, 
+    'arc_easy': {
+        'NA': [0.3333333333333333, 0.3333333333333333, 0.3333333333333333, 0.0, 0.0]
+    }, 
+    'mmlu': {
+        'public_relations': [0.0, 0.0, 0.0, 1.0, 0.0], 
+        'high_school_geography': [0.0, 1.0, 0.0, 0.0, 0.0], 
+        'high_school_microeconomics': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'us_foreign_policy': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'college_biology': [1.0, 0.0, 0.0, 0.0, 0.0], 
+        'nutrition': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'college_medicine': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'astronomy': [0.5, 0.5, 0.0, 0.0, 0.0], 
+        'econometrics': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'high_school_biology': [1.0, 0.0, 0.0, 0.0, 0.0], 
+        'high_school_macroeconomics': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'high_school_physics': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'management': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'high_school_government_and_politics': [0.0, 0.0, 0.0, 1.0, 0.0], 
+        'medical_genetics': [1.0, 0.0, 0.0, 0.0, 0.0], 
+        'prehistory': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'human_aging': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'professional_medicine': [0.0, 0.0, 1.0, 0.0, 0.0], 
+        'high_school_european_history': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'sociology': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'high_school_us_history': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'global_facts': [0.5, 0.5, 0.0, 0.0, 0.0], 
+        'high_school_world_history': [0.0, 0.0, 0.0, 0.0, 1.0], 
+        'high_school_chemistry': [0.0, 0.0, 1.0, 0.0, 0.0]
+    }
+}  # A mapping of downstream tasks to training datasets. Essentially telling the contribution of datasets to downstream performance.
 # Command line arguments
 parser = argparse.ArgumentParser(description="Orchestrator for dynamic sampling with exploitation or exploration.")
 parser.add_argument("--save_dir",type=str,required=True ,help="Name of the saving directory. In case the directory exists with a saved state resume will be done from the saved state.")
@@ -24,20 +58,13 @@ parser.add_argument("--prevent_oversampling",action='store_true',default=False,h
 parser.add_argument("--use_data_subset",action='store_true',default=False,help="If set, the data subset feature is used. If not the data  subset is kept at [0,1].")
 parser.add_argument("--oversampling_factor",type=float,default=None,help="Oversampling factor to be used if oversampling is allowed. sampling weight<=oversampling_factor*weight_empirical")
 parser.add_argument("--downstream_importance",type=float,default=0.5,help="Importance of downstream tasks in the overall reward. Default is 0.5.")
+parser.add_argument("--use_accuracy",action='store_true',default=False,help="If set, the 1 - accuracy is used as reward signal instead of the negative log likelihood for downstream tasks. Default is False.")
 args = parser.parse_args()
 # End command line arguments
-downstream_mapping = {"mmlu":{
-                              'abstract_algebra': [0.0,0.0,0.0,0.0,1.0],
-                            },
-                     "arc_challenge":{
-                                'NA': [0.0,0.0,0.0,0.0,1.0],
-                             },
-                    "arc_easy":{
-                                'NA': [0.0,0.0,0.0,0.0,1.0],
-                             }
-} # A mapping of downstream tasks to training datasets. Eseetntially telling the contribution of datasets to downstream performance.
+ # A mapping of downstream tasks to training datasets. Eseetntially telling the contribution of datasets to downstream performance.
 use_data_subset = args.use_data_subset #If true, the data subset feature is used. If false, the data subset is kept at [0,1].
 resume = args.resume
+use_accuracy = args.use_accuracy #If true, the accuracy is used instead of the log likelihood for downstream tasks. Default is False.
 prevent_uniform = args.prevent_uniform #If true, the uniform sampling is prevented. If false, the uniform sampling is allowed.
 exploitation_flag = args.exploitation #If true we use 1/(num_datasets)**2 *sqrt(iteration) else we use log10 based exploration.
 prevent_oversampling = args.prevent_oversampling #If true, the oversampling is prevented. If false, the oversampling is allowed.
@@ -295,6 +322,7 @@ class Read_Reward(BaseModel):
     '''
     reward_path: Path
     avg_loss_list: List[float] = Field(default_factory=list)
+    use_accuracy_flag: bool = False
     @model_validator(mode='after')
     def validate_model(self):
         if not self.reward_path.is_file():
@@ -303,15 +331,22 @@ class Read_Reward(BaseModel):
         self.avg_loss_list = []
         with self.reward_path.open('r') as f:
             lines = f.readlines()
-        pattern = re.compile(r"Avg Eval Loss: ([\d\.]+)")
+        if self.use_accuracy_flag:
+            pattern = re.compile(r"eval/accuracy = ([\d\.]+)")
+        else:
+            pattern = re.compile(r"Avg Eval Loss: ([\d\.]+)")
         for line in lines:
             match = pattern.search(line)
             if match:
-                self.avg_loss_list.append(float(match.group(1)))
+                if self.use_accuracy_flag:
+                    self.avg_loss_list.append(1 - float(match.group(1)))
+                else:
+                    self.avg_loss_list.append(float(match.group(1)))
+
 
 
 class Orchestrator:
-    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path, prevent_uniform:bool=False,use_data_subset:bool=False,downstream_importance:float=0.5):
+    def __init__(self,yaml_file_path:Path,save_path:Path,total_train_steps:int, run_command:str, exploitation_flag:bool, current_trainer_log_path:Path, prevent_uniform:bool=False,use_data_subset:bool=False,downstream_importance:float=0.5,use_accuracy_flag:bool=False):
         '''
         Initializes the orchestrator with the yaml file path and the save path.
         A object to handle yaml file reading and writing is created.
@@ -338,6 +373,9 @@ class Orchestrator:
             print(f"\033[1;34mNo saved state detected at {self.save_path}. Starting from scratch.\033[0m")
             self.yaml_file_path = yaml_file_path
             self.prevent_uniform = prevent_uniform
+            self.use_accuracy_flag = use_accuracy_flag
+            if self.use_accuracy_flag:
+                print("Using 1-accuracy as a signal instead of log likelihood.")
             if not self.yaml_file_path.is_file():
                 raise FileNotFoundError(f"Yaml file {self.yaml_file_path} does not exist.")
             try:
@@ -377,6 +415,8 @@ class Orchestrator:
         print(f"Exploitation flag: {self.exploitation_flag}")
         print(f"Prevent uniform sampling: {self.prevent_uniform}")
         print(f"Prevent oversampling: {self.update_weight_obj.prevent_oversampling}")
+        print(f"Use data subset: {self.use_data_subset}")
+        print(f"Use accuracy flag: {self.use_accuracy_flag}")
         if self.update_weight_obj.prevent_oversampling:
             print(f"Oversampling factor: {self.update_weight_obj.oversampling_factor}")
         print(f"*** End print of state information \n \n***")
@@ -420,7 +460,7 @@ class Orchestrator:
         Reads the reward log file and returns the latest rewards.
         Takes the latest num_datasets avg eval loss from the log file.
         '''
-        self.reward_reader_obj = Read_Reward(reward_path=self.get_reward_log_path())
+        self.reward_reader_obj = Read_Reward(reward_path=self.get_reward_log_path(),use_accuracy_flag=self.use_accuracy_flag)
         self.reward_reader_obj.read_rewards()
         latest_rewards = self.reward_reader_obj.avg_loss_list[-self.update_weight_obj.num_datasets:]
         if len(latest_rewards)<self.update_weight_obj.num_datasets:
@@ -480,10 +520,13 @@ class Orchestrator:
         for task_name, output_dir in zip(task_names, downstream_task_output_dirs):
             if not output_dir.is_dir():
                 raise NotADirectoryError(f"Output directory for task {task_name} does not exist: {output_dir}")
-            task_parser = DownstreamParser(eval_dir=output_dir,task_name=task_name)
+            task_parser = DownstreamParser(eval_dir=output_dir,task_name=task_name,use_accuracy_flag=self.use_accuracy_flag)
             downstream_log_likelihood[task_name] = task_parser.process_all_files() # For each task we have a mapping of task: {subject:[eval loss on answer]}
-        downstream_rewards = {task_name: {subject:-sum(log)/len(log) for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()} # - sum is used to convert log likelihood to negative log likelihood
-
+        if self.use_accuracy_flag:
+            downstream_rewards = {task_name: {subject:1-sum(log)/len(log) for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()}
+        else:
+            downstream_rewards = {task_name: {subject:-sum(log)/len(log) for subject, log in subject_logs.items()} for task_name, subject_logs in downstream_log_likelihood.items()} # - sum is used to convert log likelihood to negative log likelihood
+        print(f"Downstream rewards: {downstream_rewards}")
         return downstream_rewards
 
     def calculate_downstream_contribution(self,downstream_rewards_dict:Dict[str,Dict[str,float]])->list:
@@ -535,8 +578,6 @@ class Orchestrator:
         # Append the latest rewards to the reward log list
         (self.update_weight_obj).reward_log_list.append(latest_rewards_dict)
         combined_rewards = self.combine_rewards(latest_rewards_list,downstream_contribution_to_upstream_reward)
-        max_combined_reward = max(combined_rewards)
-        combined_rewards = [reward - max_combined_reward for reward in combined_rewards] # Normalize the rewards to avoid overflow issues.
         # Update the weights using the latest rewards and increse the iteration count
         new_prob_list = self.update_weight_obj.group_update(dataset_names=self.update_weight_obj.dataset_names,rewards=combined_rewards,iteration=self.update_weight_obj.iter_count)
         self.update_weight_obj.iter_count += 1
@@ -839,7 +880,8 @@ if __name__ == "__main__":
         current_trainer_log_path=current_trainer_log_path,
         prevent_uniform=prevent_uniform,
         use_data_subset=use_data_subset,
-        downstream_importance=downstream_importance
+        downstream_importance=downstream_importance,
+        use_accuracy_flag = use_accuracy
     )    
     orchestrator_obj.main()
     # orchestrator.update_weights_and_save_obj()
