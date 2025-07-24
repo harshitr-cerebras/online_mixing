@@ -15,6 +15,9 @@ from downstream_parser import DownstreamParser
 yaml_file_path = Path("/cra-614/workdirs/16072025_data_mix_downstream_testing/configs/downst_config.yaml")
 run_command = f"bash scripts/gpt2_test.sh"
 downstream_mapping = {
+    'gsm8k': {
+        'NA': [0.0, 0.0, 0.0, 0.0, 0.0]
+    },
     'arc_challenge': {
         'NA': [0.3333333333333333, 0.3333333333333333, 0.3333333333333333, 0.0, 0.0]
     }, 

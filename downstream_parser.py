@@ -24,7 +24,7 @@ class DownstreamParser:
             raise NotADirectoryError(f"The specified path is not a directory: {self.eval_dir}")
         self.task_name = task_name
         self.use_accuracy_flag = use_accuracy_flag
-        if self.task_name not in ["mmlu", "arc_challenge","arc_easy"]:
+        if self.task_name not in ["mmlu", "arc_challenge","arc_easy","gsm8k"]:
             raise ValueError(f"Unsupported task name: {self.task_name}. Supported tasks are: mmlu, arc_challenge, arc_easy.")
         self.create_jsonl_file()
 
@@ -184,6 +184,25 @@ class DownstreamParser:
         
         return results
     
+    def process_gsm8k(self) -> Dict[str, List[float]]:
+        """
+        Process the GSM8K dataset and return results.
+        
+        Returns:
+            Dictionary with subjects as keys and lists of log likelihoods as values
+        """
+        glob_path = str(self.eval_dir / "results*.json")
+        files_list = sorted(glob.glob(glob_path))
+        if(len(files_list) != 1):
+            raise ValueError(f"Found {len(files_list)} files for gsm8k. Please ensure only one result GSM8K evaluation.")
+        all_results = {'NA': []}
+        with open(files_list[0], 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        exact_match_strict = data["results"]["gsm8k"]["exact_match,strict-match"]
+        exact_match_loose = data["results"]["gsm8k"]["exact_match,flexible-extract"]
+        print(f"Exact match strict: {exact_match_strict}, Exact match loose: {exact_match_loose}")
+        all_results['NA'].append((exact_match_strict+ exact_match_loose)/2)
+        return all_results            
     def process_all_files(self) -> Dict[str, List[float]]:
         """
         Process all JSONL files in the evaluation directory and return combined results.
@@ -191,54 +210,26 @@ class DownstreamParser:
         Returns:
             Dictionary with subjects as keys and lists of log likelihoods as values
         """
-        files_list = self.get_jsonl_files_list()
-        all_results = {}
-        
-        for file_path in files_list:
-            print(f"Processing file: {file_path}")
-            results = self.process_one_file(file_path)
+        if self.task_name != "gsm8k":
+            files_list = self.get_jsonl_files_list()
+            all_results = {}
             
-            for subject, log_likelihood in results:
-                if subject not in all_results:
-                    all_results[subject] = []
-                all_results[subject].append(log_likelihood)
-        
-        return all_results
+            for file_path in files_list:
+                print(f"Processing file: {file_path}")
+                results = self.process_one_file(file_path)
+                
+                for subject, score in results:
+                    if subject not in all_results:
+                        all_results[subject] = []
+                    all_results[subject].append(score)
+            
+            return all_results
+        else:
+            return self.process_gsm8k()
     
     def get_file_count(self) -> int:
         """Return the number of JSONL files found in the evaluation directory."""
         return len(self.get_jsonl_files_list())
 
 if __name__ == "__main__":
-    ## Testing code for mmlu
-    mmlu_path = Path("/cb/cold/riturajj/gpu_setup/results/new_ift/chat/8B_7a_wd0.2_8b_bs512_3epoch/mmlu/__mnt__local__shared__riturajj__ckpts__merge__8B_7a_wd0.2_8b_bs512_3epoch")
-    mmlu_parser = DownstreamParser(mmlu_path, "mmlu")
-    # mmlu_files_list = mmlu_parser.get_jsonl_files_list()
-    # first_file = mmlu_files_list[0]
-    # parsed_data = mmlu_parser.parse_jsonl(first_file)
-    # print(parsed_data[0])
-    # print(mmlu_parser.get_subject_and_log_likelihood(parsed_data[0]))
-    # print(f"Total files processed: {mmlu_parser.get_file_count()}")
-    mmlu_res_dict = mmlu_parser.process_all_files()
-    mmlu_sub_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in mmlu_res_dict.items()}
-    print(mmlu_sub_avg_nll)
-
-    # ## Testing code for arc-challenge
-    arc_challenge_path = Path("/net/nfs1/srv/nfs/scrap-pool/riturajj/gpu_setup/results/new_ift/chat/8B_7a_wd0.2_8b_bs512_3epoch/arc_challenge/__mnt__local__shared__riturajj__ckpts__merge__8B_7a_wd0.2_8b_bs512_3epoch")
-    arc_challenge_parser = DownstreamParser(arc_challenge_path, "arc_challenge")
-    # arc_files_list = arc_challenge_parser.get_jsonl_files_list()
-    # print(arc_files_list)
-    # first_arc_file = arc_files_list[0]
-    # parsed_arc_data = arc_challenge_parser.parse_jsonl(first_arc_file)
-    # print(parsed_arc_data[0])
-    # print(arc_challenge_parser.get_subject_and_log_likelihood(parsed_arc_data[0]))
-    arc_challenge_res = arc_challenge_parser.process_all_files()
-    # print(arc_challenge_res.keys())
-    arc_challenge_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in arc_challenge_res.items()}
-    print(arc_challenge_avg_nll)
-
-    ## Testing code for arc_easy
-    arc_easy_path = Path("/cb/home/harshitr/ws/monolith/cerebras/models/src/cerebras/modelzoo/models/nlp/gpt2/arc_easy_test/")
-    arc_easy_parser = DownstreamParser(arc_easy_path, "arc_easy")
-    arc_easy_avg_nll = {sub: -sum(logs)/len(logs) for sub, logs in arc_easy_parser.process_all_files().items()}
-    print(arc_easy_avg_nll)
+    pass
