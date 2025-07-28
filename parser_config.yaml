@@ -1,0 +1,10 @@
+# Each task can have multiple metrics, defined as a list.
+# These metrics must be present in the results files when a eleuther task is run.
+# If there are multiple metrics, they will be averaged.
+gsm8k:
+  - exact_match,strict-match
+  - exact_match,flexible-extract
+arc_easy:
+  - acc,none
+arc_challenge:
+  - acc,none
